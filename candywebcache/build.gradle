@@ -1,0 +1,56 @@
+apply plugin: 'com.android.model.library'
+
+model {
+    android {
+        compileSdkVersion 21
+        buildToolsVersion "21.1.2"
+
+        defaultConfig {
+            minSdkVersion.apiLevel 14
+            targetSdkVersion.apiLevel 21
+            versionCode 1
+            versionName "1.0"
+        }
+
+        ndk {
+            moduleName "patcher"
+            CFlags.addAll(['-I' + file('src/main/jni/3rd/bzip2'),
+                             '-I' + file('src/main/jni/3rd/bsdiff')])
+            cppFlags.addAll(['-I' + file('src/main/jni/3rd/bzip2'),
+                             '-I' + file('src/main/jni/3rd/bsdiff')])
+            ldLibs.add("log")
+        }
+        sources {
+            main {
+                java {
+                    source {
+                        srcDir "src/main/java"
+                    }
+                }
+                jni {
+                    source {
+                        srcDir "src/main/jni"
+                    }
+                }
+            }
+        }
+
+        buildTypes {
+            release {
+                minifyEnabled false
+                proguardFiles.add(file("proguard-rules.pro"))
+            }
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    testCompile 'junit:junit:4.12'
+    androidTestCompile 'junit:junit:4.12'
+    androidTestCompile 'com.android.support.test:runner:0.4'
+    // Set this dependency to use JUnit 4 rules
+    androidTestCompile 'com.android.support.test:rules:0.4'
+    // Set this dependency to build and run Espresso tests
+    androidTestCompile 'com.android.support.test.espresso:espresso-core:2.2.1'
+}

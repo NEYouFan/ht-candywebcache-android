@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">CandyWebCache</string>
+    <string name="check_and_update">Start check and update</string>
+    <string name="load_page">Load page</string>
+    <string name="load_page_kaola_test">Load kaola test page</string>
+</resources>

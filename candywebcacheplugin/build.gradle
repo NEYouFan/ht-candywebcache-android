@@ -1,0 +1,39 @@
+apply plugin: 'groovy'
+apply plugin: 'maven-publish'
+
+dependencies {
+    compile gradleApi()
+    compile localGroovy()
+}
+
+
+publishing{
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifact sourcesJar
+            artifact javadocJar
+
+            groupId 'com.netease.hearttouch'
+            artifactId 'candywebcache-plugin'
+            version '0.0.4-SNAPSHOT'
+
+        }
+    }
+
+    repositories {
+        maven {
+        }
+    }
+}
+
+
+task javadocJar(type: Jar, dependsOn: groovydoc) {
+    classifier = 'javadoc'
+    from "${buildDir}/javadoc"
+}
+
+task sourcesJar(type: Jar) {
+    from sourceSets.main.allSource
+    classifier = 'sources'
+}

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <ScrollView
+        android:id="@+id/scrollview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <Button
+                android:id="@+id/btn_check_update"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="检测更新"/>
+
+            <Button
+                android:id="@+id/btn_load_resource"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="加载资源"/>
+
+            <Button
+                android:id="@+id/btn_clear"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="清除数据"/>
+            <Button
+                android:id="@+id/btn_log_info"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="查看WebApp信息"/>
+        </LinearLayout>
+    </ScrollView>
+</RelativeLayout>
