@@ -9,6 +9,54 @@ CandyWebCache是移动端web资源的本地缓存解决方案，能够拦截webv
 * 资源防篡改策略
 * 静态资源自动打包到应用，及首次安装解压处理
 
+## 客户端集成CandyWebCache
+
+### 集成自动打包插件
+集成自动打包脚本可以在发布`Release`版本时，自动获取服务器上的最新`WebApp`版本并预置到`assets`目录下，以`Plugin`形式提供。
+
+接入方式如下：
+
+* 在主`module`的`build.gradle`中加入
+    ```apply plugin: 'com.netease.hearttouch.PresetResourcePlugin'```
+
+* 在主`module`的`build.gradle`中加入
+
+```
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.netease.hearttouch:ht-candywebcacheplugin:0.1.0'
+    }
+}
+```
+* 在主`module`的`build.gradle`中加入
+
+    - `url`:检测版本的`http`请求地址
+    - `appID`:本应用注册在`CandyWebcache`的`native`应用标识
+    - `appVersion`:本应用当前的版本号
+    - `needDownload`:是否需要下载，默认设置为true，如果确定在`assembleRelease`的时候资源包没有更新，可以设置为false，加速打包过程
+
+如：
+```
+presetExt{
+    url  'http://webcache-sp.kaola.com:8080/api/version_check/webapp'
+    appID 'kaola'
+    appVersion   getVersion().toString()
+    needDownload true
+}
+```
+
+***注：由于某些Gradle实验版本无法将预置任务加入到`assembleRelease`的依赖中，所以无法实现自动下载，可以单独执行`Task`进行预置，`./gradlew app:presetResourceTask`***
+
+### 集成CandyWebCache
+
+添加依赖
+```
+    compile 'com.netease.hearttouch:ht-candywebcache:0.1.0'
+```
+
 ## CandyWebCache的使用
 
 (1) CandyWebCache的配置及初始化

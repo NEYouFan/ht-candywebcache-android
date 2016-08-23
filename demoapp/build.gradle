@@ -23,8 +23,11 @@ model {
 }
 
 buildscript {
+    repositories {
+        jcenter()
+    }
     dependencies {
-        classpath files('plugins/candywebcacheplugin.jar')
+        classpath 'com.netease.hearttouch:ht-candywebcacheplugin:0.1.0'
     }
 }
 
@@ -38,7 +41,7 @@ presetExt {
 }
 
 dependencies {
-    compile project(":candywebcache")
+    compile 'com.netease.hearttouch:ht-candywebcache:0.1.0'
     compile fileTree(dir: 'libs', include: ['*.jar'])
     testCompile 'junit:junit:4.12'
     compile 'com.android.support:appcompat-v7:21.+'
