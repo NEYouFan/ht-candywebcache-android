@@ -622,13 +622,15 @@ public class CandyWebCache {
         protected Void doInBackground(Void... params) {
             List<WebappInfo> webappInfos = mCacheManager.getAllWebappInfo();
             List<RequestResInfo> requestResInfos = new ArrayList<>();
-            for (WebappInfo appInfo : webappInfos) {
-                if (!appInfo.isInvalid()) {
-                    RequestResInfo requestResInfo = new RequestResInfo();
-                    requestResInfo.setResID(appInfo.mWebappName);
-                    requestResInfo.setResVersion(appInfo.mVerStr);
+            if (webappInfos != null) {
+                for (WebappInfo appInfo : webappInfos) {
+                    if (!appInfo.isInvalid()) {
+                        RequestResInfo requestResInfo = new RequestResInfo();
+                        requestResInfo.setResID(appInfo.mWebappName);
+                        requestResInfo.setResVersion(appInfo.mVerStr);
 
-                    requestResInfos.add(requestResInfo);
+                        requestResInfos.add(requestResInfo);
+                    }
                 }
             }
 

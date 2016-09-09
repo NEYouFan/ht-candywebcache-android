@@ -181,7 +181,10 @@ public class CacheManager {
 
     private void cacheFileInfosLocked(List<FileInfo> fileInfos) {
         for (FileInfo fileinfo : fileInfos) {
-            mWebappInfos.get(fileinfo.mAppname).mFileInfos.put(fileinfo.mUrl, fileinfo);
+            WebappInfo webappInfo = mWebappInfos.get(fileinfo.mAppname);
+            if (webappInfo != null) {
+                webappInfo.mFileInfos.put(fileinfo.mUrl, fileinfo);
+            }
         }
     }
 
@@ -685,8 +688,12 @@ public class CacheManager {
             if (webappInfo == null) {
                 return;
             }
-            long verInt = Long.parseLong(verStr);
-            if (verInt != webappInfo.mVerNum) {
+            try {
+                long verInt = Long.parseLong(verStr);
+                if (verInt != webappInfo.mVerNum) {
+                    return;
+                }
+            } catch (NumberFormatException e) {
                 return;
             }
             Set<String> domainSet = new HashSet(domains);
@@ -805,7 +812,7 @@ public class CacheManager {
         FileInfo fileInfo;
         synchronized(this) {
             WebappInfo webappInfo = mDomainWebappInfos.get(domain);
-            if (webappInfo.mStatus != WebappInfo.WEBAPP_STATUS_AVAILABLE) {
+            if (webappInfo == null || webappInfo.mStatus != WebappInfo.WEBAPP_STATUS_AVAILABLE) {
                 WebcacheLog.d("The webapp is not available now...");
                 return null;
             }
@@ -887,6 +894,9 @@ public class CacheManager {
         clearCache(appId);
         synchronized(this) {
             webappInfo = mWebappInfos.get(appId);
+            if (webappInfo == null) {
+                return;
+            }
             webappInfo.mFileInfos.clear();
             mDatabaseManager.deleteWebappFileInfos(appId);
         }
