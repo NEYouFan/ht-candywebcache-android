@@ -38,6 +38,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="查看WebApp信息"/>
+            <Button
+                android:id="@+id/upload_statistics"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="上传统计数据"/>
         </LinearLayout>
     </ScrollView>
 </RelativeLayout>

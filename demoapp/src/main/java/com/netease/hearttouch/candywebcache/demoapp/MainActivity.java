@@ -21,6 +21,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         findViewById(R.id.btn_load_resource).setOnClickListener(this);
         findViewById(R.id.btn_clear).setOnClickListener(this);
         findViewById(R.id.btn_log_info).setOnClickListener(this);
+        findViewById(R.id.upload_statistics).setOnClickListener(this);
     }
 
     @Override
@@ -42,6 +43,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
             case R.id.btn_log_info:
                 intent = new Intent(MainActivity.this, InfomationActivity.class);
                 startActivity(intent);
+                break;
+            case R.id.upload_statistics:
+                CandyWebCache.getsInstance().updateStatisticsStub();
                 break;
             default:
                 break;

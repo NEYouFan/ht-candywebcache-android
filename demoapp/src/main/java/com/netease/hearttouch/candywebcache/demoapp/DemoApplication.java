@@ -18,9 +18,13 @@ public class DemoApplication extends Application{
         CacheConfig config = buildCacheConfig();
 //            String versionCheckUrl = "http://10.242.27.37:9001/api/version_check";
         String versionCheckUrl = "http://webcache-sp.kaola.com/api/version_check/webapp";
+        String statisticsDataUploadUrl = "http://webcache-sp.kaola.com/api/statistics/webapp";
         CandyWebCache.getsInstance().setWebcacheEnabled(true);
         CandyWebCache.getsInstance().setDebugEnabled(true);
-        CandyWebCache.getsInstance().init(this, config, "kaola", "1.0.1", versionCheckUrl);
+        CandyWebCache.getsInstance().init(this, config, null, "kaola", "1.0.1",
+                versionCheckUrl, statisticsDataUploadUrl);
+        CandyWebCache.getsInstance().setStatisticUploadUrl(statisticsDataUploadUrl);
+        CandyWebCache.getsInstance().setUserId("hanpfei");
     }
 
     private CacheConfig buildCacheConfig() {
