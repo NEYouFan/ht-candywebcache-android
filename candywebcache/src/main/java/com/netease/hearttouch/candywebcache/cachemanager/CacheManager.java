@@ -49,10 +49,6 @@ public class CacheManager {
         PkgDiff, PkgFull;
     }
 
-    static {
-        System.loadLibrary("patcher");
-    }
-
     private final String mProtectedFilesDirPath;
     private final String mCacheFilesDirPath;
     private final Set<String> mUncachedFileTypes;
@@ -67,6 +63,8 @@ public class CacheManager {
     private Map<String, WebappInfo> mDomainWebappInfos;
     private Map<String, String> mUrlToDomain;
     private Map<String, WebappInfo> mWebappInfos;
+
+    private long mTotalHitFileSize = 0;
 
     public CacheManager(Context context, String protectedDirPath, String cacheDir, List<String> uncachedFileTypes,
                         int maxCacheSizeInBytes) {
@@ -124,7 +122,9 @@ public class CacheManager {
                     Iterator<String> domains = appinfo.mDomains.iterator();
                     while (domains.hasNext()) {
                         String domain = domains.next();
-                        mDomainWebappInfos.put(domain, appinfo);
+                        if (!TextUtils.isEmpty(domain)) {
+                            mDomainWebappInfos.put(domain, appinfo);
+                        }
                     }
                 }
                 List<FileInfo> fileinfos = mDatabaseManager.getFileInfos();
@@ -162,7 +162,9 @@ public class CacheManager {
         }
         mWebappInfos.put(webappInfo.mWebappName, webappInfo);
         for (String domain : webappInfo.mDomains) {
-            mDomainWebappInfos.put(domain, webappInfo);
+            if (!TextUtils.isEmpty(domain)) {
+                mDomainWebappInfos.put(domain, webappInfo);
+            }
         }
         return true;
     }
@@ -207,7 +209,7 @@ public class CacheManager {
             WebcacheLog.d("%s", "Create index for " + appname + " start.");
         }
         File appFilesDir = getAppFilesDir(appname);
-        if (!appFilesDir.exists()) {
+        if (info == null || !appFilesDir.exists()) {
             return -1;
         }
         String appFilesDirPath = appFilesDir.getAbsolutePath();
@@ -841,9 +843,18 @@ public class CacheManager {
             WebcacheLog.i("%s", "Cache hit: " + urlStr);
             fileInfo.increaseAccessCount();
             bais = new ByteArrayInputStream(entry.data);
+            mTotalHitFileSize += entry.data.length;
         }
 
         return bais;
+    }
+
+    public long getTotalHitFileSize() {
+        return mTotalHitFileSize;
+    }
+
+    public void clearTotalHitFileSize() {
+        mTotalHitFileSize = 0;
     }
 
     private interface FileInfoFilter {

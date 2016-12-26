@@ -48,7 +48,7 @@ public class CandyWebCacheTest extends InstrumentationTestCase {
     @Test
     public void testInitNullCacheConfig() throws Exception {
         assertTrue(true);
-        mCandyWebCache.init(mContext, null, "kaola", "20160617", null);
+        mCandyWebCache.init(mContext, null, null, "kaola", "20160617", null, null);
         Thread.sleep(4000);
         File protectedFilesDir = new File(mContext.getFilesDir(), "webcache");
         assertTrue(protectedFilesDir.exists());
@@ -86,7 +86,7 @@ public class CandyWebCacheTest extends InstrumentationTestCase {
         builder.setManifestDirPath(protectedFilesPath);
         CacheConfig config = builder.build();
 
-        mCandyWebCache.init(mContext, config, "kaola", "20160617", null);
+        mCandyWebCache.init(mContext, config, null, "kaola", "20160617", null, null);
         Thread.sleep(4000);
 
         File protectedFilesDir = new File("/sdcard/kaola/manifest");

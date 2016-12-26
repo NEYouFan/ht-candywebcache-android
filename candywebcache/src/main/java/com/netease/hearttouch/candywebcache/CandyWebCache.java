@@ -1,12 +1,15 @@
 package com.netease.hearttouch.candywebcache;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
@@ -38,19 +41,27 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.Vector;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -77,9 +88,18 @@ public class CandyWebCache {
     private static final long FIRST_VERSION_CHECK_DELAY_MILLIS = 3500;
     private static final int DEFAULT_MAX_CACHE_SIZE_IN_BYTES = (int) Runtime.getRuntime().maxMemory() / 8;
 
+    private static final int STATISTICS_TYPE_SUMMARY = 1;
+
+    private static final long STATISTICS_UPLOAD_PERIOD = 900000; // 15min
+
     private static CandyWebCache sInstance;
 
     private volatile boolean mWebcacheEnabled = true;
+    private volatile boolean mJustDownloadAtWifi = true;
+    private String mUserId;
+    private int mTotalAccessedFileNum = 0;
+    private int mTotalHitFileNum = 0;
+    private volatile long mLastAccessTime;
 
     private Context mContext;
     private String mNativeId;
@@ -88,10 +108,11 @@ public class CandyWebCache {
 
     private VersionCheckListener mVersionCheckListener;
     private Vector<ResourceUpdateListener> mListeners = new Vector<ResourceUpdateListener>();
-    ;
 
     private LoadLocalPackageTask mLoadLocalPackageTask;
-    private Timer mVersionCheckTimer;
+    private volatile boolean mVersionCheckTaskStarted;
+    private volatile boolean mStatisticUploadTaskStarted;
+    private ScheduledExecutorService mScheduledService;
     private CheckAndUpdateTask mCheckAndUpdateTask;
 
     private volatile CacheManager mCacheManager;
@@ -114,6 +135,7 @@ public class CandyWebCache {
     };
 
     private String mCheckUrl;
+    private String mStatisticsDataUploadUrl;
 
     private CandyWebCache() {
     }
@@ -277,6 +299,14 @@ public class CandyWebCache {
         }
 
         private void startLoadLocalPackage() {
+            CacheManager cacheManager;
+            synchronized (CandyWebCache.this) {
+                if (mCacheManager != null) {
+                    cacheManager = mCacheManager;
+                } else {
+                    return;
+                }
+            }
             try {
                 InputStream webappsIs = null;
                 String[] fileNames = mContext.getAssets().list("webapps");
@@ -296,7 +326,7 @@ public class CandyWebCache {
                             if (appDigest == null) {
                                 continue;
                             }
-                            mCacheManager.loadLocalPackage(filename, appDigest.mVersion, appDigest.mMd5,
+                            cacheManager.loadLocalPackage(filename, appDigest.mVersion, appDigest.mMd5,
                                     appDigest.mDomains, mContext.getAssets().open("webapps/" + filename));
                         }
                     }
@@ -309,15 +339,17 @@ public class CandyWebCache {
         private void setCheckUrl() {
             if (mCheckPeriod > 0) {
                 synchronized (CandyWebCache.this) {
-                    if (mVersionCheckTimer == null) {
-                        mVersionCheckTimer = new Timer();
-                        TimerTask task = new TimerTask() {
+                    if (!mVersionCheckTaskStarted) {
+                        Runnable task = new Runnable() {
                             @Override
                             public void run() {
-                                startCheckAndUpdate(1);
+                                startCheckAndUpdate(10);
+                                mScheduledService.schedule(this, mCheckPeriod, TimeUnit.MILLISECONDS);
                             }
                         };
-                        mVersionCheckTimer.schedule(task, FIRST_VERSION_CHECK_DELAY_MILLIS, mCheckPeriod);
+                        mScheduledService.schedule(task, FIRST_VERSION_CHECK_DELAY_MILLIS,
+                                TimeUnit.MILLISECONDS);
+                        mVersionCheckTaskStarted = true;
                     }
                 }
             } else {
@@ -327,6 +359,10 @@ public class CandyWebCache {
 
         @Override
         protected Void doInBackground(Void... params) {
+            if (!ReLinker.loadLibrary(mContext, "patcher")) {
+                return null;
+            }
+
             if (WebcacheLog.DEBUG) {
                 WebcacheLog.d("Load local package start");
             }
@@ -346,7 +382,20 @@ public class CandyWebCache {
         }
     }
 
-    public synchronized void init(Context context, CacheConfig config, String nativeId, String nativeVersion, String checkUrl) {
+    public synchronized void init(Context context, CacheConfig config, String nativeId,
+                                  String nativeVersion, String checkUrl) {
+        init(context, config, null, nativeId, nativeVersion, checkUrl, null);
+    }
+
+    public synchronized void init(Context context, CacheConfig config, String userId,
+                                  String nativeId, String nativeVersion, String checkUrl,
+                                  String statisticsUrl) {
+        init(context, config, userId, nativeId, nativeVersion, checkUrl, statisticsUrl, true);
+    }
+
+    public synchronized void init(Context context, CacheConfig config, String userId,
+                                  String nativeId, String nativeVersion, String checkUrl,
+                                  String statisticsUrl, boolean justDownloadAtWifi) {
         if (mLoadLocalPackageTask != null || mCheckAndUpdateTask != null || !mWebcacheEnabled) {
             return;
         }
@@ -362,11 +411,32 @@ public class CandyWebCache {
         }
         mContext = context.getApplicationContext();
         mNativeId = nativeId;
+
+        setUserId(userId);
+
         mNativeVersion = nativeVersion;
         mCheckUrl = checkUrl;
+        setStatisticUploadUrl(statisticsUrl);
+        mJustDownloadAtWifi = justDownloadAtWifi;
+        mVersionCheckTaskStarted = false;
+        mStatisticUploadTaskStarted = false;
+        mScheduledService = new ScheduledThreadPoolExecutor(1);
+
         DEFAULT_PROTECTED_FILES_DIR_PATH = mContext.getFilesDir() + File.separator + "webcache";
         mLoadLocalPackageTask = new LoadLocalPackageTask(config);
         mLoadLocalPackageTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+    }
+
+    public void setUserId(String userId) {
+        if (userId == null) {
+            mUserId = "defaultUser";
+        } else {
+            mUserId = userId;
+        }
+    }
+
+    public void setStatisticUploadUrl(String statisticsUrl) {
+        mStatisticsDataUploadUrl = statisticsUrl;
     }
 
     public abstract class VersionCheckListener {
@@ -450,6 +520,24 @@ public class CandyWebCache {
         return paramStr.toString();
     }
 
+    private boolean isWifiConnected() {
+        ConnectivityManager connectivityManager =
+                (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connectivityManager == null) {
+            return false;
+        }
+        NetworkInfo networkInfo;
+        try {
+            networkInfo = connectivityManager.getActiveNetworkInfo();
+        } catch (Exception e) {
+            return false;
+        }
+        if (networkInfo != null) {
+            return networkInfo.getType() == ConnectivityManager.TYPE_WIFI;
+        }
+        return false;
+    }
+
     private class PatchTask extends AsyncTask<Void, Void, Integer> {
         private ResponseResInfo mVersionInfo;
         private CacheManager.PkgType mPkgType;
@@ -464,7 +552,15 @@ public class CandyWebCache {
         @Override
         protected Integer doInBackground(Void... params) {
             WebcacheLog.d("%s", "Apply patch for " + mVersionInfo.getResID() + " start.");
-            return mCacheManager.applyPatch(mVersionInfo.getResID(), mPkgType, mDiffFilePath, mVersionInfo.getDiffMd5(),
+            CacheManager cacheManager;
+            synchronized (CandyWebCache.this) {
+                if (checkCacheManagerLocked()) {
+                    cacheManager = mCacheManager;
+                } else {
+                    return CacheManager.DIFF_ERROR_UNKNOWN;
+                }
+            }
+            return cacheManager.applyPatch(mVersionInfo.getResID(), mPkgType, mDiffFilePath, mVersionInfo.getDiffMd5(),
                     mVersionInfo.getFullMd5(), mVersionInfo.getFullUrl(), mVersionInfo.getResVersion(), getDomainsFromUserData(mVersionInfo.getUserData()));
         }
 
@@ -477,11 +573,7 @@ public class CandyWebCache {
                     String fullUrl = mVersionInfo.getFullUrl();
                     if (fullUrl != null) {
                         WebappDownloadListener listener = new WebappDownloadListener(mVersionInfo, CacheManager.PkgType.PkgFull);
-                        DownloadTask.DownloadTaskBuilder taskBuilder = new DownloadTask.DownloadTaskBuilder();
-                        taskBuilder.setOnStateChangeListener(listener);
-                        DownloadTask downloadTask = taskBuilder.setDownloadUrl(fullUrl).build();
-
-                        downloadTask.start();
+                        startDownload(fullUrl, listener);
                     }
                 } else {
                     notifyWebappsUpdateFailed(mVersionInfo.getResID(), new CacheError("Diff apply failed."));
@@ -520,14 +612,24 @@ public class CandyWebCache {
         }
     }
 
-    private void downloadPatches(List<ResponseResInfo> versionInfos) {
+    private void startDownload(String url, WebappDownloadListener listener) {
+        if (!mJustDownloadAtWifi || isWifiConnected()) {
+            DownloadTask.DownloadTaskBuilder taskBuilder = new DownloadTask.DownloadTaskBuilder();
+            taskBuilder.setOnStateChangeListener(listener);
+            DownloadTask downloadTask = taskBuilder.setDownloadUrl(url).build();
+
+            downloadTask.start();
+        }
+    }
+
+    private void downloadPatches(List<ResponseResInfo> versionInfos, CacheManager cacheManager) {
         for (ResponseResInfo versionInfo : versionInfos) {
             String appId = versionInfo.getResID();
             int statusCode = versionInfo.getState();
             if (statusCode == VersionChecker.StatusCode.LATEST) { // The local is the latest
             } else if (statusCode == VersionChecker.StatusCode.NEED_UPDATE ||
                     statusCode == VersionChecker.StatusCode.RESOURCE_AUTO_FILL) { // Need update
-                WebappInfo webappInfo = mCacheManager.getWebappInfo(appId);
+                WebappInfo webappInfo = cacheManager.getWebappInfo(appId);
                 String ver = versionInfo.getResVersion();
                 long verInt = Long.parseLong(ver);
                 WebcacheLog.d("%s", "Update app " + appId + " server version " + ver + " local version "
@@ -555,20 +657,16 @@ public class CandyWebCache {
                             }
                         }
                     } else if (verInt == webappInfo.mVerNum) {
-                        mCacheManager.updateWebappInfo(versionInfo.getResID(), versionInfo.getFullUrl(),
+                        cacheManager.updateWebappInfo(versionInfo.getResID(), versionInfo.getFullUrl(),
                                 versionInfo.getResVersion(), getDomainsFromUserData(versionInfo.getUserData()));
                     }
                 }
                 if (url != null) {
                     WebcacheLog.d("%s", "Start to download pkg " + url);
-                    DownloadTask.DownloadTaskBuilder taskBuilder = new DownloadTask.DownloadTaskBuilder();
-                    taskBuilder.setOnStateChangeListener(listener);
-                    DownloadTask downloadTask = taskBuilder.setDownloadUrl(url).build();
-
-                    downloadTask.start();
+                    startDownload(url, listener);
                 }
             } else if (statusCode == VersionChecker.StatusCode.RESOURCE_NOT_EXIST) { // Need to be removed.
-                mCacheManager.deleteWebapp(appId);
+                cacheManager.deleteWebapp(appId);
             }
         }
     }
@@ -620,7 +718,14 @@ public class CandyWebCache {
 
         @Override
         protected Void doInBackground(Void... params) {
-            List<WebappInfo> webappInfos = mCacheManager.getAllWebappInfo();
+            CacheManager cacheManager;
+            synchronized (CandyWebCache.this) {
+                if (!checkCacheManagerLocked()) {
+                    return null;
+                }
+                cacheManager = mCacheManager;
+            }
+            List<WebappInfo> webappInfos = cacheManager.getAllWebappInfo();
             List<RequestResInfo> requestResInfos = new ArrayList<>();
             if (webappInfos != null) {
                 for (WebappInfo appInfo : webappInfos) {
@@ -670,7 +775,7 @@ public class CandyWebCache {
                 WebcacheLog.d("%s", "Check response code " + resCode + " err msg " + response.getErrMsg());
                 VersionCheckResponseData resData = response.getData();
                 List<ResponseResInfo> versionInfos = resData.getResInfos();
-                downloadPatches(versionInfos);
+                downloadPatches(versionInfos, cacheManager);
             }
             return null;
         }
@@ -688,18 +793,22 @@ public class CandyWebCache {
             WebcacheLog.d("%s", "Check url = " + mCheckUrl);
         }
         synchronized (this) {
-            if (checkCacheManager() && mCheckUrl != null) {
+            if (checkCacheManagerLocked() && mCheckUrl != null) {
                 mHandler.sendEmptyMessageDelayed(START_CHECK_AND_UPDATE, delayMillis);
             }
         }
     }
 
     public void updateWebapp(String appInfo) {
-        if (!checkCacheManager()) {
-            return;
+        CacheManager cacheManager;
+        synchronized (this) {
+            if (!checkCacheManagerLocked()) {
+                return;
+            }
+            cacheManager = mCacheManager;
         }
         List<ResponseResInfo> responseResInfos = VersionChecker.getVersionInfo(appInfo);
-        downloadPatches(responseResInfos);
+        downloadPatches(responseResInfos, cacheManager);
     }
 
     // Receive pushed message.
@@ -707,7 +816,7 @@ public class CandyWebCache {
 
     }
 
-    private boolean checkCacheManager() {
+    private boolean checkCacheManagerLocked() {
         if (!mWebcacheEnabled) {
             WebcacheLog.d("CandyWebCache was disabled...");
             return false;
@@ -720,52 +829,120 @@ public class CandyWebCache {
     }
 
     public WebappInfo getWebappInfo(String appid) {
-        if (!checkCacheManager()) {
-            return null;
+        CacheManager cacheManager;
+        synchronized (this) {
+            if (!checkCacheManagerLocked()) {
+                return null;
+            }
+            cacheManager = mCacheManager;
         }
-        return mCacheManager.getWebappInfo(appid);
+
+        return cacheManager.getWebappInfo(appid);
     }
 
     public List<WebappInfo> getAllWebappInfo() {
-        if (!checkCacheManager()) {
-            return null;
+        CacheManager cacheManager;
+        synchronized (this) {
+            if (!checkCacheManagerLocked()) {
+                return null;
+            }
+            cacheManager = mCacheManager;
         }
-        return mCacheManager.getAllWebappInfo();
+        return cacheManager.getAllWebappInfo();
     }
 
     public void clearAllCache() {
-        if (!checkCacheManager()) {
-            return;
+        CacheManager cacheManager;
+        synchronized (this) {
+            if (!checkCacheManagerLocked()) {
+                return;
+            }
+            cacheManager = mCacheManager;
         }
-        mCacheManager.clearAllCache();
+        cacheManager.clearAllCache();
     }
 
     public void clearCache(String appid) {
-        if (!checkCacheManager()) {
-            return;
+        CacheManager cacheManager;
+        synchronized (this) {
+            if (!checkCacheManagerLocked()) {
+                return;
+            }
+            cacheManager = mCacheManager;
         }
-        mCacheManager.clearCache(appid);
+        cacheManager.clearCache(appid);
     }
 
     public void deleteCache(String appid) {
-        if (!checkCacheManager()) {
-            return;
+        CacheManager cacheManager;
+        synchronized (this) {
+            if (!checkCacheManagerLocked()) {
+                return;
+            }
+            cacheManager = mCacheManager;
         }
-        mCacheManager.deleteWebapp(appid);
+        cacheManager.deleteWebapp(appid);
+    }
+
+    private class StatisticsUploadTask implements Runnable {
+        private final long mPeriod;
+
+        private StatisticsUploadTask(long period) {
+            mPeriod = period;
+        }
+
+        @Override
+        public void run() {
+            CacheManager cacheManager = null;
+            long now = System.currentTimeMillis();
+            synchronized (CandyWebCache.this) {
+                if (checkCacheManagerLocked()) {
+                    cacheManager = mCacheManager;
+                } else {
+                    mLastAccessTime = now - mPeriod - 10;
+                }
+            }
+            if (cacheManager != null) {
+                updateStatistics(cacheManager);
+            }
+
+            if (now - mLastAccessTime > mPeriod) {
+                synchronized (CandyWebCache.this) {
+                    mStatisticUploadTaskStarted = false;
+                }
+            } else {
+                mScheduledService.schedule(this, mPeriod, TimeUnit.MILLISECONDS);
+            }
+        }
+    }
+
+    private void startStatisticsUploadLocked(final long delay, final long period) {
+        if (mStatisticsDataUploadUrl != null && !mStatisticUploadTaskStarted) {
+            Runnable task = new StatisticsUploadTask(period);
+            mScheduledService.schedule(task, delay, TimeUnit.MILLISECONDS);
+        }
     }
 
     public WebResourceResponse getResponse(WebView view, String urlStr) {
         WebcacheLog.d("%s", "Get resource " + urlStr);
-        if (!checkCacheManager()) {
-            return null;
+        CacheManager cacheManager;
+        synchronized (this) {
+            if (!checkCacheManagerLocked()) {
+                return null;
+            }
+            cacheManager = mCacheManager;
+            startStatisticsUploadLocked(STATISTICS_UPLOAD_PERIOD, STATISTICS_UPLOAD_PERIOD);
         }
+        ++mTotalAccessedFileNum;
+        mLastAccessTime = System.currentTimeMillis();
         WebResourceResponse response = null;
-        InputStream is = mCacheManager.getResource(urlStr);
+        InputStream is = cacheManager.getResource(urlStr);
         if (is != null) {
             String fileExtension = MimeTypeMap.getFileExtensionFromUrl(urlStr);
             String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(fileExtension);
 
             response = new WebResourceResponse(mimeType, "UTF-8", is);
+            ++mTotalHitFileNum;
         }
         return response;
     }
@@ -794,5 +971,91 @@ public class CandyWebCache {
             e.printStackTrace();
         }
         return domains;
+    }
+
+    private void upload(String urlStr, String str) {
+        URL url = null;
+        try {
+            url = new URL(urlStr);
+            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+
+            urlConnection.setConnectTimeout(3000);
+            urlConnection.setUseCaches(false);
+
+            urlConnection.setInstanceFollowRedirects(true);
+            urlConnection.setReadTimeout(3000);
+            urlConnection.setDoInput(true);
+            urlConnection.setDoOutput(true);
+            urlConnection.setRequestMethod("POST");
+            urlConnection.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
+            urlConnection.connect();
+
+            OutputStream out = urlConnection.getOutputStream();
+            BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(out));
+            bw.write(str);
+            bw.flush();
+            out.close();
+            bw.close();
+
+            WebcacheLog.d("Statistics = " + str);
+            if (urlConnection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                InputStream in = urlConnection.getInputStream();
+                BufferedReader br = new BufferedReader(new InputStreamReader(in));
+                String resstr;
+                StringBuffer buffer = new StringBuffer();
+                while ((resstr = br.readLine()) != null) {
+                    buffer.append(resstr);
+                }
+                in.close();
+                br.close();
+                JSONObject json = new JSONObject(buffer.toString());
+                if (json.has("code")) {
+                    int code = json.getInt("code");
+                    if (code != 200) {
+                        WebcacheLog.i(TAG, "Upload statistics fialed: " + code);
+                    }
+                }
+            }
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void updateStatistics(CacheManager cacheManager) {
+        JSONObject jsonObject = new JSONObject();
+        try {
+            jsonObject.put("userId", mUserId);
+            String deviceId = Settings.Secure.getString(mContext.getContentResolver(),
+                    Settings.Secure.ANDROID_ID);
+            jsonObject.put("deviceId", deviceId);
+            jsonObject.put("platform", PLATFORM);
+            jsonObject.put("appId", mNativeId);
+            jsonObject.put("recordType", STATISTICS_TYPE_SUMMARY);
+            jsonObject.put("totalFileNum", mTotalAccessedFileNum);
+            jsonObject.put("hitFileNum", mTotalHitFileNum);
+            jsonObject.put("totalHitFileSize", cacheManager.getTotalHitFileSize());
+
+            JSONArray jsonArray = new JSONArray();
+            jsonArray.put(jsonObject);
+
+            JSONObject jsonStatistics = new JSONObject();
+            jsonStatistics.put("data", jsonArray.toString());
+            upload(mStatisticsDataUploadUrl, jsonStatistics.toString());
+
+            mTotalAccessedFileNum = 0;
+            mTotalHitFileNum = 0;
+            cacheManager.clearTotalHitFileSize();
+        } catch (JSONException e) {
+        }
+    }
+
+    public void updateStatisticsStub() {
+        synchronized (this) {
+            startStatisticsUploadLocked(2000, 3000);
+        }
     }
 }
