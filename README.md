@@ -54,7 +54,7 @@ presetExt{
 
 添加依赖
 ```
-    compile 'com.netease.hearttouch:ht-candywebcache:0.1.0'
+    compile 'com.netease.hearttouch:ht-candywebcache:0.2.0'
 ```
 
 ## CandyWebCache的使用
