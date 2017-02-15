@@ -297,6 +297,9 @@ public class CacheManager {
             String appname = FileUtils.getPrimaryFileName(filename);
 
             File appDir = getAppDir(appname);
+            if (appDir.exists()) {
+                FileUtils.deleteDir(appDir);
+            }
             if (!appDir.mkdirs()) {
                 WebcacheLog.d("%s", "Create dir failed: " + appDir.getAbsolutePath());
                 return null;
@@ -383,7 +386,7 @@ public class CacheManager {
 
     public boolean loadLocalPackage(String fileName, String version, String md5, List<String> appDomains, InputStream is) {
         LocalPackageLoadTask task = new LocalPackageLoadTask(fileName, version, md5, appDomains, is);
-        mExecutorService.execute(task);
+        task.run();
         return true;
     }
 
@@ -600,6 +603,7 @@ public class CacheManager {
                         }
                     }
                 }
+
                 mFullMD5 = EnDecryptionUtils.decode(mFullMD5);
                 newApp = enterUpdatingStatus();
                 updateWebappInfo(mWebappInfo);
