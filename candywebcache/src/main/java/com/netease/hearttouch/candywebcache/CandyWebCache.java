@@ -1,6 +1,9 @@
 package com.netease.hearttouch.candywebcache;
 
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
@@ -102,6 +105,8 @@ public class CandyWebCache {
     private volatile boolean mVersionCheckTaskStarted;
     private ScheduledExecutorService mScheduledService;
     private CheckAndUpdateTask mCheckAndUpdateTask;
+
+    private int mNetworkType;
 
     private volatile CacheManager mCacheManager;
     private StatisticLogger mStatisticLogger;
@@ -398,6 +403,16 @@ public class CandyWebCache {
         return NETWORK_TYPE_NONE;
     }
 
+    private BroadcastReceiver mConnectivityChangeListener = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            mNetworkType = getNetworkType();
+            if (mStatisticLogger != null) {
+                mStatisticLogger.connectivityChanged(mNetworkType);
+            }
+        }
+    };
+
     public synchronized void init(Context context, CacheConfig config, String nativeId,
                                   String nativeVersion, String checkUrl) {
         init(context, config, null, nativeId, nativeVersion, checkUrl, null);
@@ -441,6 +456,9 @@ public class CandyWebCache {
         DEFAULT_PROTECTED_FILES_DIR_PATH = mContext.getFilesDir().getAbsolutePath() + File.separator + "webcache";
         mLoadLocalPackageTask = new LoadLocalPackageTask(config);
         mLoadLocalPackageTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+
+        IntentFilter intentFilter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
+        mContext.registerReceiver(mConnectivityChangeListener, intentFilter);
     }
 
     public void setUserId(String userId) {
@@ -537,7 +555,7 @@ public class CandyWebCache {
     }
 
     private boolean isWifiConnected() {
-        return getNetworkType() == ConnectivityManager.TYPE_WIFI;
+        return mNetworkType == ConnectivityManager.TYPE_WIFI;
     }
 
     private class PatchTask extends AsyncTask<Void, Void, Integer> {
