@@ -9,7 +9,6 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
-import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
@@ -42,18 +41,10 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -75,6 +66,8 @@ import javax.xml.parsers.ParserConfigurationException;
 public class CandyWebCache {
     private static final String TAG = "CandyWebCache";
 
+    public static final int NETWORK_TYPE_NONE = -1;
+
     private static final String PLATFORM = "android";
     private static final String WEBAPP_INFOS_FILENAME = "webapps.xml";
     private static final int START_CHECK_AND_UPDATE = 1;
@@ -89,18 +82,11 @@ public class CandyWebCache {
     private static final long FIRST_VERSION_CHECK_DELAY_MILLIS = 3500;
     private static final int DEFAULT_MAX_CACHE_SIZE_IN_BYTES = (int) Runtime.getRuntime().maxMemory() / 8;
 
-    private static final int STATISTICS_TYPE_SUMMARY = 1;
-
-    private static final long STATISTICS_UPLOAD_PERIOD = 900000; // 15min
-
     private static CandyWebCache sInstance;
 
     private volatile boolean mWebcacheEnabled = true;
     private volatile boolean mJustDownloadAtWifi = true;
     private String mUserId;
-    private int mTotalAccessedFileNum = 0;
-    private int mTotalHitFileNum = 0;
-    private volatile long mLastAccessTime;
 
     private Context mContext;
     private String mNativeId;
@@ -114,11 +100,11 @@ public class CandyWebCache {
 
     private LoadLocalPackageTask mLoadLocalPackageTask;
     private volatile boolean mVersionCheckTaskStarted;
-    private volatile boolean mStatisticUploadTaskStarted;
     private ScheduledExecutorService mScheduledService;
     private CheckAndUpdateTask mCheckAndUpdateTask;
 
     private volatile CacheManager mCacheManager;
+    private StatisticLogger mStatisticLogger;
 
     private Handler mHandler = new Handler(Looper.getMainLooper()) {
         @Override
@@ -138,7 +124,6 @@ public class CandyWebCache {
     };
 
     private String mCheckUrl;
-    private String mStatisticsDataUploadUrl;
 
     private CandyWebCache() {
     }
@@ -396,6 +381,23 @@ public class CandyWebCache {
         }
     }
 
+    private int getNetworkType() {
+        ConnectivityManager connectivityManager =
+                (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connectivityManager == null) {
+            return NETWORK_TYPE_NONE;
+        }
+        NetworkInfo networkInfo = null;
+        try {
+            networkInfo = connectivityManager.getActiveNetworkInfo();
+        } catch (Exception e) {
+        }
+        if (networkInfo != null) {
+            return networkInfo.getType();
+        }
+        return NETWORK_TYPE_NONE;
+    }
+
     public synchronized void init(Context context, CacheConfig config, String nativeId,
                                   String nativeVersion, String checkUrl) {
         init(context, config, null, nativeId, nativeVersion, checkUrl, null);
@@ -434,7 +436,6 @@ public class CandyWebCache {
         setStatisticUploadUrl(statisticsUrl);
         mJustDownloadAtWifi = justDownloadAtWifi;
         mVersionCheckTaskStarted = false;
-        mStatisticUploadTaskStarted = false;
         mScheduledService = new ScheduledThreadPoolExecutor(1);
 
         DEFAULT_PROTECTED_FILES_DIR_PATH = mContext.getFilesDir().getAbsolutePath() + File.separator + "webcache";
@@ -451,7 +452,7 @@ public class CandyWebCache {
     }
 
     public void setStatisticUploadUrl(String statisticsUrl) {
-        mStatisticsDataUploadUrl = statisticsUrl;
+        mStatisticLogger = new StatisticLogger(mContext, mNativeId, mUserId, statisticsUrl);
     }
 
     public abstract class VersionCheckListener {
@@ -536,21 +537,7 @@ public class CandyWebCache {
     }
 
     private boolean isWifiConnected() {
-        ConnectivityManager connectivityManager =
-                (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-        if (connectivityManager == null) {
-            return false;
-        }
-        NetworkInfo networkInfo;
-        try {
-            networkInfo = connectivityManager.getActiveNetworkInfo();
-        } catch (Exception e) {
-            return false;
-        }
-        if (networkInfo != null) {
-            return networkInfo.getType() == ConnectivityManager.TYPE_WIFI;
-        }
-        return false;
+        return getNetworkType() == ConnectivityManager.TYPE_WIFI;
     }
 
     private class PatchTask extends AsyncTask<Void, Void, Integer> {
@@ -620,6 +607,9 @@ public class CandyWebCache {
                         + mVersionInfo.getResID() + " completed");
                 String fileDirPath = downloadTask.getDownloadTaskData().getDownloadPath();
                 String filePath = fileDirPath + File.separator + downloadTask.getDownloadTaskData().getFilename();
+                if (mStatisticLogger != null) {
+                    mStatisticLogger.logResourceDownloaded(new File(filePath).length());
+                }
                 WebcacheLog.d("%s", "File path = " + filePath);
                 PatchTask task = new PatchTask(mVersionInfo, mPkgType, filePath);
                 task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
@@ -899,45 +889,6 @@ public class CandyWebCache {
         cacheManager.deleteWebapp(appid);
     }
 
-    private class StatisticsUploadTask implements Runnable {
-        private final long mPeriod;
-
-        private StatisticsUploadTask(long period) {
-            mPeriod = period;
-        }
-
-        @Override
-        public void run() {
-            CacheManager cacheManager = null;
-            long now = System.currentTimeMillis();
-            synchronized (CandyWebCache.this) {
-                if (checkCacheManagerLocked()) {
-                    cacheManager = mCacheManager;
-                } else {
-                    mLastAccessTime = now - mPeriod - 10;
-                }
-            }
-            if (cacheManager != null) {
-                updateStatistics(cacheManager);
-            }
-
-            if (now - mLastAccessTime > mPeriod) {
-                synchronized (CandyWebCache.this) {
-                    mStatisticUploadTaskStarted = false;
-                }
-            } else {
-                mScheduledService.schedule(this, mPeriod, TimeUnit.MILLISECONDS);
-            }
-        }
-    }
-
-    private void startStatisticsUploadLocked(final long delay, final long period) {
-        if (mStatisticsDataUploadUrl != null && !mStatisticUploadTaskStarted) {
-            Runnable task = new StatisticsUploadTask(period);
-            mScheduledService.schedule(task, delay, TimeUnit.MILLISECONDS);
-        }
-    }
-
     public WebResourceResponse getResponse(WebView view, String urlStr) {
         WebcacheLog.d("%s", "Get resource " + urlStr);
         CacheManager cacheManager;
@@ -946,10 +897,11 @@ public class CandyWebCache {
                 return null;
             }
             cacheManager = mCacheManager;
-            startStatisticsUploadLocked(STATISTICS_UPLOAD_PERIOD, STATISTICS_UPLOAD_PERIOD);
         }
-        ++mTotalAccessedFileNum;
-        mLastAccessTime = System.currentTimeMillis();
+        if (mStatisticLogger != null) {
+            mStatisticLogger.logFileAccess();
+        }
+
         WebResourceResponse response = null;
         InputStream is = cacheManager.getResource(urlStr);
         if (is != null) {
@@ -957,7 +909,14 @@ public class CandyWebCache {
             String mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(fileExtension);
 
             response = new WebResourceResponse(mimeType, "UTF-8", is);
-            ++mTotalHitFileNum;
+
+            try {
+                if (mStatisticLogger != null) {
+                    mStatisticLogger.logFileHit(is.available());
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
         return response;
     }
@@ -1000,89 +959,9 @@ public class CandyWebCache {
         return domains;
     }
 
-    private void upload(String urlStr, String str) {
-        URL url = null;
-        try {
-            url = new URL(urlStr);
-            HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
-
-            urlConnection.setConnectTimeout(3000);
-            urlConnection.setUseCaches(false);
-
-            urlConnection.setInstanceFollowRedirects(true);
-            urlConnection.setReadTimeout(3000);
-            urlConnection.setDoInput(true);
-            urlConnection.setDoOutput(true);
-            urlConnection.setRequestMethod("POST");
-            urlConnection.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
-            urlConnection.connect();
-
-            OutputStream out = urlConnection.getOutputStream();
-            BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(out));
-            bw.write(str);
-            bw.flush();
-            out.close();
-            bw.close();
-
-            WebcacheLog.d("Statistics = " + str);
-            if (urlConnection.getResponseCode() == HttpURLConnection.HTTP_OK) {
-                InputStream in = urlConnection.getInputStream();
-                BufferedReader br = new BufferedReader(new InputStreamReader(in));
-                String resstr;
-                StringBuffer buffer = new StringBuffer();
-                while ((resstr = br.readLine()) != null) {
-                    buffer.append(resstr);
-                }
-                in.close();
-                br.close();
-                JSONObject json = new JSONObject(buffer.toString());
-                if (json.has("code")) {
-                    int code = json.getInt("code");
-                    if (code != 200) {
-                        WebcacheLog.i(TAG, "Upload statistics fialed: " + code);
-                    }
-                }
-            }
-        } catch (MalformedURLException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void updateStatistics(CacheManager cacheManager) {
-        JSONObject jsonObject = new JSONObject();
-        try {
-            jsonObject.put("userId", mUserId);
-            String deviceId = Settings.Secure.getString(mContext.getContentResolver(),
-                    Settings.Secure.ANDROID_ID);
-            jsonObject.put("deviceId", deviceId);
-            jsonObject.put("platform", PLATFORM);
-            jsonObject.put("appId", mNativeId);
-            jsonObject.put("recordType", STATISTICS_TYPE_SUMMARY);
-            jsonObject.put("totalFileNum", mTotalAccessedFileNum);
-            jsonObject.put("hitFileNum", mTotalHitFileNum);
-            jsonObject.put("totalHitFileSize", cacheManager.getTotalHitFileSize());
-
-            JSONArray jsonArray = new JSONArray();
-            jsonArray.put(jsonObject);
-
-            JSONObject jsonStatistics = new JSONObject();
-            jsonStatistics.put("data", jsonArray.toString());
-            upload(mStatisticsDataUploadUrl, jsonStatistics.toString());
-
-            mTotalAccessedFileNum = 0;
-            mTotalHitFileNum = 0;
-            cacheManager.clearTotalHitFileSize();
-        } catch (JSONException e) {
-        }
-    }
-
     public void updateStatisticsStub() {
-        synchronized (this) {
-            startStatisticsUploadLocked(2000, 3000);
+        if (mStatisticLogger != null) {
+            mStatisticLogger.updateStatisticsStub();
         }
     }
 }
