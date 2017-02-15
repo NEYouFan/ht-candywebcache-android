@@ -28,7 +28,11 @@ class PresetResourcePlugin implements Plugin<Project> {
                 }
                 //清除旧文件，如果下载失败等原因，下次重新打包的时候会再清理的
                 File projectDir = project.getProjectDir()
-                File dirFile = new File(projectDir, "src/main/assets/webapps")
+                String targetPath = "src/main/assets/webapps"
+                if (ext.downloadPath != null && ext.downloadPath != "") {
+                    targetPath = ext.downloadPath + "/webapps";
+                }
+                File dirFile = new File(projectDir, targetPath)
                 if (dirFile.exists()) {
                     dirFile.deleteDir()
                 }
@@ -146,9 +150,10 @@ class PresetResourcePlugin implements Plugin<Project> {
         }
 
         project.afterEvaluate {
-            Task task = project.tasks.findByName("assembleRelease")
-            if (task != null) {
-                task.dependsOn 'presetResourceTask'
+            for (Task task : project.tasks) {
+                if(task.name.startsWith("assemble") && task.name.endsWith("Release")) {
+                    task.dependsOn 'presetResourceTask'
+                }
             }
         }
     }

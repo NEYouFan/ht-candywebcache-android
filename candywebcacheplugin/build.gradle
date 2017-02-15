@@ -16,8 +16,8 @@ publishing{
 
             groupId 'com.netease.hearttouch'
             artifactId 'candywebcache-plugin'
-            version '0.0.4-SNAPSHOT'
 
+            version '0.0.7-SNAPSHOT'
         }
     }
 
