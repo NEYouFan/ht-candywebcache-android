@@ -16,6 +16,7 @@
             android:layout_width="match_parent"
             android:layout_weight="1"
             android:layout_height="wrap_content"
+            android:inputType="textUri"
             android:singleLine="true"
             android:text="http://www.kaola.com/webapp/res/image/sprite.png"/>
         <Button

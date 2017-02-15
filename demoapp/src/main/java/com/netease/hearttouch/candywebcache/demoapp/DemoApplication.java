@@ -33,6 +33,10 @@ public class DemoApplication extends Application{
 //        uncachedType.add(".html");
         builder.setUncachedFileTypes(uncachedType);
         builder.setMemCacheSize(5 * 1025 * 1024);
+
+        List<String> defaultDomains = new ArrayList<>();
+        defaultDomains.add("w.kl.126.net/");
+        builder.setDefaultDomains(defaultDomains);
         return builder.build();
     }
 }
