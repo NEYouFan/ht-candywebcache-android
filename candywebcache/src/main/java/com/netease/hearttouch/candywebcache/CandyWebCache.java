@@ -38,6 +38,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
@@ -108,6 +109,8 @@ public class CandyWebCache {
 
     private VersionCheckListener mVersionCheckListener;
     private Vector<ResourceUpdateListener> mListeners = new Vector<ResourceUpdateListener>();
+
+    private List<String> mDefaultDomains;
 
     private LoadLocalPackageTask mLoadLocalPackageTask;
     private volatile boolean mVersionCheckTaskStarted;
@@ -215,6 +218,15 @@ public class CandyWebCache {
                 uncachedFileTypes = config.getUncachedFileType();
                 mCheckPeriod = config.getUpdateCheckCycle();
                 WebcacheLog.d("Check period = " + mCheckPeriod);
+
+                List<String> defaultDomains = config.getDefaultDomains();
+                if (defaultDomains != null && defaultDomains.size() > 0) {
+                    mDefaultDomains = new ArrayList<>();
+                    for (String domain : defaultDomains) {
+                        String formattedDomain = formatDomain(domain);
+                        mDefaultDomains.add(formattedDomain);
+                    }
+                }
             }
             if (protectedFilesDirPath == null) {
                 protectedFilesDirPath = DEFAULT_PROTECTED_FILES_DIR_PATH;
@@ -224,11 +236,10 @@ public class CandyWebCache {
             }
             downloadTmpDirPath = cacheFilesDirPath + File.separator + DOWNLOAD_DIR_NAME;
             webappsDirPath = cacheFilesDirPath + File.separator + WEBAPPS_DIR_NAME;
-            FileDownloadManager.init(mContext, protectedFilesDirPath + File.separator + "database", downloadTmpDirPath);
-
             if (!createDirs(webappsDirPath, protectedFilesDirPath, downloadTmpDirPath)) {
                 return false;
             }
+            FileDownloadManager.init(mContext, protectedFilesDirPath + File.separator + "database", downloadTmpDirPath);
 
             if (uncachedFileTypes == null) {
                 uncachedFileTypes = new ArrayList<>();
@@ -276,8 +287,11 @@ public class CandyWebCache {
                     NodeList domainNodes = appElem.getElementsByTagName("domain");
                     for (int j = 0; j < domainNodes.getLength(); ++j) {
                         Element domainElem = (Element) domainNodes.item(j);
-                        String domain = domainElem.getFirstChild().getNodeValue();
-                        digest.mDomains.add(domain);
+                        Node node = domainElem.getFirstChild();
+                        if (node != null) {
+                            String domain = node.getNodeValue();
+                            digest.mDomains.add(domain);
+                        }
                     }
                     digests.put(digest.mAppName, digest);
                 }
@@ -400,8 +414,9 @@ public class CandyWebCache {
             return;
         }
         if (mInitialized) {
-            if (mCacheManager.checkDatabaseValidation()
-                    && FileDownloadManager.getInstance().isDownloadDbValid()) {
+            boolean cacheManagerReady = mCacheManager.checkDatabaseValidation();
+            boolean downloadManagerReady = FileDownloadManager.getInstance().isDownloadDbValid();
+            if (cacheManagerReady && downloadManagerReady) {
                 return;
             }
             FileDownloadManager.getInstance().closeDownloadDatabase();
@@ -422,7 +437,7 @@ public class CandyWebCache {
         mStatisticUploadTaskStarted = false;
         mScheduledService = new ScheduledThreadPoolExecutor(1);
 
-        DEFAULT_PROTECTED_FILES_DIR_PATH = mContext.getFilesDir() + File.separator + "webcache";
+        DEFAULT_PROTECTED_FILES_DIR_PATH = mContext.getFilesDir().getAbsolutePath() + File.separator + "webcache";
         mLoadLocalPackageTask = new LoadLocalPackageTask(config);
         mLoadLocalPackageTask.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     }
@@ -952,6 +967,14 @@ public class CandyWebCache {
         return getResponse(view, uri.toString());
     }
 
+    private String formatDomain(String originDomain) {
+        String domain = originDomain;
+        if (originDomain.indexOf('/') >= 0) {
+            domain = originDomain.substring(0, originDomain.indexOf('/'));
+        }
+        return domain;
+    }
+
     private List<String> getDomainsFromUserData(String userData) {
         List<String> domains = null;
         try {
@@ -962,13 +985,17 @@ public class CandyWebCache {
                     JSONArray domainsJsonArray = jsonObject.getJSONArray("domains");
                     if (domainsJsonArray != null) {
                         for (int i = 0; i < domainsJsonArray.length(); i++) {
-                            domains.add(domainsJsonArray.getString(i));
+                            domains.add(formatDomain(domainsJsonArray.getString(i)));
                         }
                     }
                 }
             }
         } catch (JSONException e) {
             e.printStackTrace();
+        }
+        if ((domains == null || domains.size() == 0) && (mDefaultDomains != null && mDefaultDomains.size() > 0)) {
+            domains = new ArrayList<>();
+            domains.addAll(mDefaultDomains);
         }
         return domains;
     }

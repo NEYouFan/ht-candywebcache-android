@@ -1,5 +1,6 @@
 package com.netease.hearttouch.candywebcache;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -11,6 +12,7 @@ public class CacheConfig {
     private String mManifestDirPath;
     private int mMemCacheSize;
     private List<String> mUncachedFileType;
+    private List<String> mDefaultDomains;
 
     public static class ConfigBuilder {
         private long mUpdateCheckCycle;
@@ -18,6 +20,7 @@ public class CacheConfig {
         private String mManifestDirPath;
         private int mMemCacheSize;
         private List<String> mUncachedFileType;
+        private List<String> mDefaultDomains;
 
         private ConfigBuilder() {
         }
@@ -47,13 +50,23 @@ public class CacheConfig {
             return this;
         }
 
+        public ConfigBuilder setDefaultDomains(List<String> domains) {
+            mDefaultDomains = domains;
+            return this;
+        }
+
         public CacheConfig build() {
             CacheConfig cacheConfig = new CacheConfig();
             cacheConfig.mUpdateCheckCycle = mUpdateCheckCycle;
             cacheConfig.mCacheDirPath = mCacheDirPath;
             cacheConfig.mManifestDirPath = mManifestDirPath;
             cacheConfig.mMemCacheSize = mMemCacheSize;
-            cacheConfig.mUncachedFileType = mUncachedFileType;
+            if (mUncachedFileType != null && mUncachedFileType.size() > 0) {
+                cacheConfig.mUncachedFileType = new ArrayList<>(mUncachedFileType);
+            }
+            if (mDefaultDomains != null && mDefaultDomains.size() > 0) {
+                cacheConfig.mDefaultDomains = new ArrayList<>(mDefaultDomains);
+            }
             return cacheConfig;
         }
     }
@@ -85,5 +98,9 @@ public class CacheConfig {
 
     public List<String> getUncachedFileType() {
         return mUncachedFileType;
+    }
+
+    public List<String> getDefaultDomains() {
+        return mDefaultDomains;
     }
 }
