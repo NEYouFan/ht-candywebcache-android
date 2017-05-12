@@ -8,5 +8,6 @@ public interface Constants {
     int CONNECT_TIMEOUT = 8000;
     int READ_TIMEOUT = 8000;
 
-    String PROTOCOL_VERSION = "0.1";
+    String PROTOCOL_VERSION_0_1 = "0.1";
+    String PROTOCOL_VERSION_0_2 = "0.2";
 }

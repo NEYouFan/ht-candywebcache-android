@@ -26,6 +26,19 @@ import java.util.Map;
  * Created by DING on 16/6/8.
  */
 public class VersionChecker {
+    public static final String PACKAGE_MODE_ZIP = "zip";
+    public static final String PACKAGE_MODE_DEFAULT = PACKAGE_MODE_ZIP;
+
+    public static final String COMPRESS_MODE_NONE = "none";
+    public static final String COMPRESS_MODE_GZIP = "gzip";
+    public static final String COMPRESS_MODE_BRO = "bro";
+    public static final String COMPRESS_MODE_DEFAULT = COMPRESS_MODE_NONE;
+
+    public static final String DIFF_MDOE_BSDIFF = "bsdiff";
+    public static final String DIFF_MODE_COURGETTE = "courgette";
+    public static final String DIFF_MODE_DEFAULT = DIFF_MDOE_BSDIFF;
+
+
     /**
      * 进行版本检测，同步接口
      *

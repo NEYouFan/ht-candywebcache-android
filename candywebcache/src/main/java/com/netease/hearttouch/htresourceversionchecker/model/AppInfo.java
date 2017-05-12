@@ -14,7 +14,7 @@ import java.util.List;
  * Created by DING on 16/6/8.
  */
 public class AppInfo {
-    private String version = Constants.PROTOCOL_VERSION;
+    private String version = Constants.PROTOCOL_VERSION_0_2;
     private String appID;
     private String appVersion;
     private String platform;

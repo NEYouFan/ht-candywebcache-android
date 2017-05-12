@@ -600,10 +600,10 @@ public class CandyWebCache {
             if (errCode == CacheManager.DIFF_SUCCESS) {
                 notifyWebappsUpdateSuccess(mVersionInfo.getResID());
             } else {
-                if (mPkgType == CacheManager.PkgType.PkgDiff) {
+                if (mPkgType == CacheManager.PkgType.PKG_ZIP_WITH_BSDIFF) {
                     String fullUrl = mVersionInfo.getFullUrl();
                     if (fullUrl != null) {
-                        WebappDownloadListener listener = new WebappDownloadListener(mVersionInfo, CacheManager.PkgType.PkgFull);
+                        WebappDownloadListener listener = new WebappDownloadListener(mVersionInfo, CacheManager.PkgType.PKG_ZIP);
                         startDownload(fullUrl, listener);
                     }
                 } else {
@@ -660,6 +660,32 @@ public class CandyWebCache {
         }
     }
 
+    private CacheManager.PkgType getPkgTypeForFullPackage(String packageMode, String compressMode) {
+        CacheManager.PkgType pkgType = CacheManager.PkgType.PKG_ZIP;
+        if (VersionChecker.PACKAGE_MODE_ZIP.equals(packageMode)) {
+            if (VersionChecker.COMPRESS_MODE_NONE.equals(compressMode)) {
+                pkgType = CacheManager.PkgType.PKG_ZIP;
+            } else if (VersionChecker.COMPRESS_MODE_GZIP.equals(compressMode)) {
+                pkgType = CacheManager.PkgType.PKG_ZIP_WITH_GZIP;
+            } else if (VersionChecker.COMPRESS_MODE_BRO.equals(compressMode)) {
+                pkgType = CacheManager.PkgType.PKG_ZIP_WITH_BROTLI;
+            }
+        }
+        return pkgType;
+    }
+
+    private CacheManager.PkgType getPkgTypeForDiffPackage(String packageMode, String diffMode) {
+        CacheManager.PkgType pkgType = CacheManager.PkgType.PKG_ZIP_WITH_BSDIFF;
+        if (VersionChecker.PACKAGE_MODE_ZIP.equals(packageMode)) {
+            if (VersionChecker.DIFF_MDOE_BSDIFF.equals(diffMode)) {
+                pkgType = CacheManager.PkgType.PKG_ZIP_WITH_BSDIFF;
+            } else if (VersionChecker.DIFF_MODE_COURGETTE.equals(diffMode)) {
+                pkgType = CacheManager.PkgType.PKG_ZIP_WITH_COURGETTE;
+            }
+        }
+        return pkgType;
+    }
+
     private void downloadPatches(List<ResponseResInfo> versionInfos, CacheManager cacheManager) {
         for (ResponseResInfo versionInfo : versionInfos) {
             String appId = versionInfo.getResID();
@@ -676,8 +702,12 @@ public class CandyWebCache {
                 String url = null;
                 if (webappInfo == null) {
                     url = versionInfo.getFullUrl();
+                    String packageMode = versionInfo.getPackageMode();
+                    String compressMode = versionInfo.getCompressMode();
+
+                    CacheManager.PkgType pkgType = getPkgTypeForFullPackage(packageMode, compressMode);
                     WebcacheLog.d("%s", "To download full pkg " + url);
-                    listener = new WebappDownloadListener(versionInfo, CacheManager.PkgType.PkgFull);
+                    listener = new WebappDownloadListener(versionInfo, pkgType);
                 } else {
                     if (webappInfo.inProcessStatus()) {
                         continue;
@@ -685,13 +715,19 @@ public class CandyWebCache {
                     if (verInt != webappInfo.mVerNum || webappInfo.isInvalid()) {
                         url = versionInfo.getDiffUrl();
                         WebcacheLog.d("%s", "To download diff pkg " + url);
-                        if (url != null) {
-                            listener = new WebappDownloadListener(versionInfo, CacheManager.PkgType.PkgDiff);
+                        if (!TextUtils.isEmpty(url)) {
+                            String packageMode = versionInfo.getPackageMode();
+                            String diffMode = versionInfo.getDiffMode();
+                            CacheManager.PkgType pkgType = getPkgTypeForDiffPackage(packageMode, diffMode);
+                            listener = new WebappDownloadListener(versionInfo, pkgType);
                         } else {
                             url = versionInfo.getFullUrl();
                             WebcacheLog.d("%s", "Try to download full pkg " + url);
                             if (url != null) {
-                                listener = new WebappDownloadListener(versionInfo, CacheManager.PkgType.PkgFull);
+                                String packageMode = versionInfo.getPackageMode();
+                                String compressMode = versionInfo.getCompressMode();
+                                CacheManager.PkgType pkgType = getPkgTypeForFullPackage(packageMode, compressMode);
+                                listener = new WebappDownloadListener(versionInfo, pkgType);
                             }
                         }
                     } else if (verInt == webappInfo.mVerNum) {

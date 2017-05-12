@@ -50,6 +50,8 @@ dependencies {
     androidTestCompile 'com.android.support.test:rules:0.4'
     // Set this dependency to build and run Espresso tests
     androidTestCompile 'com.android.support.test.espresso:espresso-core:2.2.1'
+
+    compile project(":brotlij")
 }
 
 def siteUrl = 'https://github.com/NEYouFan/ht-candywebcache-android'      // 项目的主页

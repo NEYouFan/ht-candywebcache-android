@@ -1,5 +1,7 @@
 package com.netease.hearttouch.htresourceversionchecker.model;
 
+import com.netease.hearttouch.htresourceversionchecker.VersionChecker;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -14,6 +16,11 @@ public class ResponseResInfo {
     private String diffMd5;
     private String fullUrl;
     private String fullMd5;
+
+    private String packageMode = VersionChecker.PACKAGE_MODE_DEFAULT;
+    private String compressMode = VersionChecker.COMPRESS_MODE_DEFAULT;
+    private String diffMode  = VersionChecker.DIFF_MODE_DEFAULT;
+
     private String userData;
 
     public String getResID() {
@@ -62,6 +69,30 @@ public class ResponseResInfo {
 
     public void setFullMd5(String fullMd5) {
         this.fullMd5 = fullMd5;
+    }
+
+    public void setPackageMode(String packageMode) {
+        this.packageMode = packageMode;
+    }
+
+    public String getPackageMode() {
+        return packageMode;
+    }
+
+    public void setCompressMode(String compressMode) {
+        this.compressMode = compressMode;
+    }
+
+    public String getCompressMode() {
+        return compressMode;
+    }
+
+    public void setDiffMode(String diffMode) {
+        this.diffMode = diffMode;
+    }
+
+    public String getDiffMode() {
+        return diffMode;
     }
 
     public int getState() {
@@ -113,6 +144,15 @@ public class ResponseResInfo {
         if (jsonObject.has("userData")) {
             result.userData = jsonObject.getString("userData");
         }
+        if (jsonObject.has("packageMode")) {
+            result.packageMode = jsonObject.getString("packageMode");
+        }
+        if (jsonObject.has("compressMode")) {
+            result.compressMode = jsonObject.getString("compressMode");
+        }
+        if (jsonObject.has("diffMode")) {
+            result.diffMode = jsonObject.getString("diffMode");
+        }
         return result;
     }
 
@@ -125,6 +165,9 @@ public class ResponseResInfo {
                 .append("fullUrl:").append(fullUrl != null ? fullUrl : "null").append(',')
                 .append("fullMd5:").append(fullMd5 != null ? fullMd5 : "null").append(',')
                 .append("state:").append(state).append(',')
+                .append("packageMode").append(packageMode).append(",")
+                .append("compressMode").append(compressMode).append(",")
+                .append("diffMode").append(diffMode).append(",")
                 .append("userData:").append(userData != null ? userData : "null");
         return sb.toString();
     }

@@ -1,1 +1,1 @@
-include ':demoapp', ':candywebcache', ':candywebcacheplugin'
+include ':demoapp', ':candywebcache', ':candywebcacheplugin', ':brotlij'

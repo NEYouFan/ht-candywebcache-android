@@ -1,16 +1,15 @@
 package com.netease.hearttouch.candywebcache.cachemanager;
 
 import android.content.Context;
-import android.net.Uri;
 import android.text.TextUtils;
 
+import com.netease.hearttouch.brotlij.Brotli;
 import com.netease.hearttouch.candywebcache.WebcacheLog;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.DigestInputStream;
@@ -20,7 +19,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,7 +44,8 @@ public class CacheManager {
     private static final String DATABASE_FOLDER_NAME = "database";
 
     public enum PkgType {
-        PkgDiff, PkgFull;
+        PKG_ZIP_WITH_BSDIFF, PKG_ZIP_WITH_COURGETTE,
+        PKG_ZIP, PKG_ZIP_WITH_GZIP, PKG_ZIP_WITH_BROTLI,
     }
 
     private final String mProtectedFilesDirPath;
@@ -423,11 +422,11 @@ public class CacheManager {
     private class PatchApplyer {
         private final String mAppId;
         private final PkgType mPkgType;
-        private final String mPatchFilePath;
         private final String mFullUrl;
         private final String mVerStr;
         private final List<String> mDomains;
 
+        private String mPatchFilePath;
         private String mDiffMD5;
         private String mFullMD5;
 
@@ -455,6 +454,13 @@ public class CacheManager {
         }
 
         private boolean enterUpdatingStatus() {
+            if (mPkgType == PkgType.PKG_ZIP_WITH_BROTLI) {
+                String decompressedFilePath = mPatchFilePath.substring(0, mPatchFilePath.lastIndexOf("."));
+                Brotli.decompressFile(mPatchFilePath, decompressedFilePath);
+                File origFile = new File(mPatchFilePath);
+                origFile.delete();
+                mPatchFilePath = decompressedFilePath;
+            }
             boolean newApp;
             if (mWebappInfo == null || TextUtils.isEmpty(mWebappInfo.mPkgFilePath)) { // Full package update.
                 mPkgExtName = FileUtils.getExtName(mPatchFilePath);
@@ -585,7 +591,7 @@ public class CacheManager {
             synchronized(CacheManager.this) {
                 mWebappInfo = getWebappInfoLocked(mAppId);
                 if (mWebappInfo == null) {
-                    if (mPkgType != PkgType.PkgFull) {
+                    if (mPkgType != PkgType.PKG_ZIP && mPkgType != PkgType.PKG_ZIP_WITH_GZIP && mPkgType != PkgType.PKG_ZIP_WITH_BROTLI) {
                         WebcacheLog.d("%s", "Apply patch for " + mAppId + " failed: the webapp is not existed, need full update.");
                         return DIFF_ERROR_INVALID_LOCAL_FILE;
                     }
@@ -595,7 +601,7 @@ public class CacheManager {
                         return DIFF_ERROR_UNKNOWN;
                     }
                     if (mWebappInfo.isInvalid()) {
-                        if (mPkgType != PkgType.PkgFull) {
+                        if (mPkgType != PkgType.PKG_ZIP && mPkgType != PkgType.PKG_ZIP_WITH_GZIP && mPkgType != PkgType.PKG_ZIP_WITH_BROTLI) {
                             WebcacheLog.d("%s", "Apply patch for " + mAppId + " failed: status " + mWebappInfo.mStatus + " need full update");
                             return DIFF_ERROR_INVALID_LOCAL_FILE;
                         }
@@ -615,7 +621,7 @@ public class CacheManager {
                 WebappInfo failedWebappInfo = new WebappInfo(mWebappInfo.mDomains, mWebappInfo.mFullUrl, mWebappInfo.mWebappName,
                         mWebappInfo.mVerStr, mWebappInfo.mCachedDirPath, mWebappInfo.mCacheSize, mWebappInfo.mPkgFilePath,
                         mWebappInfo.mPkgFileMd5, WebappInfo.WEBAPP_STATUS_OUT_OF_DATE, mWebappInfo.mFileInfos);
-                if (mPkgType == PkgType.PkgDiff) {
+                if (mPkgType == PkgType.PKG_ZIP_WITH_BSDIFF) {
                     int res = applyDiff();
                     if (res != DIFF_SUCCESS) {
                         updateWebappInfo(failedWebappInfo);

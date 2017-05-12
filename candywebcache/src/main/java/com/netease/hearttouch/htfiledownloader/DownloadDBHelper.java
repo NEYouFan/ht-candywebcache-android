@@ -25,6 +25,13 @@ public class DownloadDBHelper extends SQLiteOpenHelper {
     static void init(Context context, String dbPath) {
         sContext = context;
         sDBPath = dbPath;
+        getInstance();
+        try {
+            getInstance().getReadableDatabase();
+        } catch (Exception e) {
+            //吃掉异常，主要是文件被删除，下次打开应用会重建的
+            e.printStackTrace();
+        }
     }
 
     static DownloadDBHelper getInstance() {
@@ -39,7 +46,6 @@ public class DownloadDBHelper extends SQLiteOpenHelper {
     }
 
     private DownloadDBHelper(Context context, String databasePath) {
-
         super(context, databasePath + File.separator + DATABASE_NAME, null, DATABASE_VERSION);
     }
 
