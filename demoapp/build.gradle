@@ -39,7 +39,9 @@ presetExt {
 }
 
 dependencies {
-    compile 'com.netease.hearttouch:ht-candywebcache:0.2.0'
+    compile project(":candywebcache")
+//    compile 'com.netease.hearttouch:ht-candywebcache:0.2.0'
+
     compile fileTree(dir: 'libs', include: ['*.jar'])
     testCompile 'junit:junit:4.12'
     compile 'com.android.support:appcompat-v7:21.+'

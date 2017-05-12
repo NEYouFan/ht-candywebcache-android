@@ -173,7 +173,7 @@ public class StatisticLogger {
                 jsonStatistics.put("deviceId", mDeviceId);
                 jsonStatistics.put("platform", PLATFORM);
                 jsonStatistics.put("appId", mNativeId);
-                jsonStatistics.put("data", jsonArray);
+                jsonStatistics.put("data", jsonArray.toString());
                 upload(mStatisticsDataUploadUrl, jsonStatistics.toString());
             }
         } catch (JSONException e) {

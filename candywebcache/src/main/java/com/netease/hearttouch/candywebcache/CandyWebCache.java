@@ -494,12 +494,17 @@ public class CandyWebCache {
         mVersionCheckListener = versionCheckListener;
     }
 
-    public abstract class ResourceUpdateListener {
-        public abstract void onResourceUpdateProgress(ResourceUpdateListener listener, String appid, float percent);
+    public static abstract class ResourceUpdateListener {
+        public abstract void onProgressUpdate(ResourceUpdateListener listener, String appid,
+                                              float percent);
 
-        public abstract void onResourceUpdateSuccess(ResourceUpdateListener listener, String appid);
+        public abstract void onDownloadCompleted(ResourceUpdateListener listener, String appid,
+                                                 String url, long resSize);
 
-        public abstract void onResourceUpdateFailed(ResourceUpdateListener listener, String appid, CacheError error);
+        public abstract void onUpdateSuccess(ResourceUpdateListener listener, String appid);
+
+        public abstract void onUpdateFailed(ResourceUpdateListener listener, String appid,
+                                            CacheError error);
     }
 
     public synchronized void removeResourceUpdateListener(ResourceUpdateListener listener) {
@@ -518,19 +523,25 @@ public class CandyWebCache {
 
     private synchronized void notifyWebappsUpdateProgress(String appid, float percent) {
         for (ResourceUpdateListener listener : mListeners) {
-            listener.onResourceUpdateProgress(listener, appid, percent);
+            listener.onProgressUpdate(listener, appid, percent);
+        }
+    }
+
+    private synchronized void notifyWebappsDownloadCompleted(String appid, String url, long resSize) {
+        for (ResourceUpdateListener listener : mListeners) {
+            listener.onDownloadCompleted(listener, appid, url, resSize);
         }
     }
 
     private synchronized void notifyWebappsUpdateSuccess(String appid) {
         for (ResourceUpdateListener listener : mListeners) {
-            listener.onResourceUpdateSuccess(listener, appid);
+            listener.onUpdateSuccess(listener, appid);
         }
     }
 
     private synchronized void notifyWebappsUpdateFailed(String appid, CacheError error) {
         for (ResourceUpdateListener listener : mListeners) {
-            listener.onResourceUpdateFailed(listener, appid, error);
+            listener.onUpdateFailed(listener, appid, error);
         }
     }
 
@@ -621,13 +632,17 @@ public class CandyWebCache {
         @Override
         public void onStateChanged(DownloadTask downloadTask, DownloadTaskState state) {
             if (state == DownloadTaskState.DONE) {
-                WebcacheLog.d("%s", "Download task " + downloadTask.getDownloadTaskData().getFilename() + " for "
+                DownloadTask.DownloadTaskData taskData = downloadTask.getDownloadTaskData();
+                WebcacheLog.d("%s", "Download task " + taskData.getFilename() + " for "
                         + mVersionInfo.getResID() + " completed");
-                String fileDirPath = downloadTask.getDownloadTaskData().getDownloadPath();
-                String filePath = fileDirPath + File.separator + downloadTask.getDownloadTaskData().getFilename();
+                String fileDirPath = taskData.getDownloadPath();
+                String filePath = fileDirPath + File.separator + taskData.getFilename();
+                long resSize = new File(filePath).length();
+
                 if (mStatisticLogger != null) {
-                    mStatisticLogger.logResourceDownloaded(new File(filePath).length());
+                    mStatisticLogger.logResourceDownloaded(resSize);
                 }
+                notifyWebappsDownloadCompleted(mVersionInfo.getResID(), taskData.getUrl(), resSize);
                 WebcacheLog.d("%s", "File path = " + filePath);
                 PatchTask task = new PatchTask(mVersionInfo, mPkgType, filePath);
                 task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
